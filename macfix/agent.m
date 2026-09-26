@@ -440,23 +440,16 @@ static NSDictionary *handleMouseMove(NSDictionary *req) {
 }
 
 static NSDictionary *handleScroll(NSDictionary *req) {
-    float dx = [req[@"dx"] floatValue], dy = [req[@"dy"] floatValue];
+    float dy = [req[@"dy"] floatValue];
     return syncOnMain(^id {
         GCDeviceCursor *scroll = GCMouse.current.mouseInput.scroll;
-        BOOL sent = NO;
-        if (scroll.valueChangedHandler) {
-            scroll.valueChangedHandler(scroll, dx, dy);
-            sent = YES;
+        GCControllerDirectionPadValueChangedHandler handler = scroll.valueChangedHandler;
+        if (!handler) {
+            return @{@"ok": @NO, @"error": @"the game has no scroll handler"};
         }
-        if (scroll.xAxis.valueChangedHandler && dx != 0) {
-            scroll.xAxis.valueChangedHandler(scroll.xAxis, dx);
-            sent = YES;
-        }
-        if (scroll.yAxis.valueChangedHandler && dy != 0) {
-            scroll.yAxis.valueChangedHandler(scroll.yAxis, dy);
-            sent = YES;
-        }
-        return sent ? @{@"ok": @YES} : @{@"ok": @NO, @"error": @"the game has no scroll handler"};
+        // The game reads the wheel from the first value only (one notch per event, by sign); no horizontal scroll.
+        handler(scroll, dy, 0);
+        return @{@"ok": @YES};
     });
 }
 
@@ -481,9 +474,10 @@ static NSDictionary *state(void) {
         // True only while macOS actually captures the pointer (full screen); the game asks for it in-world.
         BOOL locked = window.windowScene.pointerLockState.isLocked;
         BOOL wantsLock = [vc respondsToSelector:@selector(prefersPointerLocked)] && vc.prefersPointerLocked;
+        BOOL typing = focusedTextInput() != nil;
         return @{@"ok": @YES, @"width": @(frameWidth), @"height": @(frameHeight), @"focused": @(focused),
                  @"fps": @(round(currentFps() * 10) / 10), @"fps_cap": @(fpsCap), @"cursor_locked": @(locked),
-                 @"pointer_lock_requested": @(wantsLock), @"text_input": @(focusedTextInput() != nil),
+                 @"pointer_lock_requested": @(wantsLock), @"text_input": @(typing),
                  @"mouse_x": @(mouseX), @"mouse_y": @(mouseY)};
     });
 }
