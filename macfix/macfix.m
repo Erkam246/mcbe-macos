@@ -4,6 +4,8 @@
 #import <QuartzCore/QuartzCore.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <stdatomic.h>
+#import <unistd.h>
 
 // AppKit beeps for key events the game reads via GameController but never
 // consumes through the responder chain. Text input is unaffected.
@@ -151,9 +153,48 @@ static void installFrameRate(void) {
     NSLog(@"[macfix] frame rate hook installed");
 }
 
+// UIKit ends the app with exit(), whose static destructors crash under the
+// game's still-running threads and hang in its crash handler, leaving a
+// windowless process that PlayCover can only reactivate. Once UIKit has
+// delivered the termination callbacks (so the game has saved), skip them.
+static atomic_bool terminating;
+static IMP origTerminateWithStatus;
+
+static void exitNow(int status) {
+    NSLog(@"[macfix] termination callbacks done, exiting");
+    _exit(status);
+}
+
+static void terminateWithStatus(id self, SEL _cmd, int status) {
+    terminating = true;
+    ((void (*)(id, SEL, int))origTerminateWithStatus)(self, _cmd, status);
+    // Closing the last window leaves AppKit waiting inside -terminate: instead of exiting.
+    exitNow(status);
+}
+
+// Catches AppKit's own exit and UIKit's termination watchdog.
+static void safeExit(int status) {
+    if (terminating) {
+        exitNow(status);
+    }
+    exit(status);
+}
+
+__attribute__((used, section("__DATA,__interpose"))) static const struct {
+    const void *replacement, *original;
+} interposeExit = {(const void *)safeExit, (const void *)exit};
+
+static void installCleanExit(void) {
+    origTerminateWithStatus = hook(objc_getClass("UIApplication"), "_terminateWithStatus:", (IMP)terminateWithStatus);
+    if (!origTerminateWithStatus) {
+        NSLog(@"[macfix] -[UIApplication _terminateWithStatus:] not found");
+    }
+}
+
 __attribute__((constructor)) static void init(void) {
     installFrameRate();
     installInputRepair();
+    installCleanExit();
     // AppKit may not be loaded yet when this image initialises.
     if (objc_getClass("NSResponder")) {
         installNoBeep();
