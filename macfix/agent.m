@@ -629,6 +629,47 @@ static void serveClient(int fd) {
     close(fd);
 }
 
+// MACFIX_AGENT_HIDDEN=1 keeps the window ordered out while the game keeps rendering, taking input and
+// giving screenshots. Ordering out can still send the app to the background, where the game stops its
+// display link, so its background callbacks and -stopAnimation are swallowed; it still saves on quit.
+static void swallowAppCallback(id self, SEL _cmd, id application) {}
+static void swallowStopAnimation(id self, SEL _cmd) {}
+
+static void replaceMethod(Class cls, const char *selector, IMP replacement) {
+    Method m = cls ? class_getInstanceMethod(cls, sel_registerName(selector)) : NULL;
+    if (m) {
+        method_setImplementation(m, replacement);
+    } else {
+        NSLog(@"[macfix] agent: %s not found, hidden mode may pause", selector);
+    }
+}
+
+static void hideGameWindow(void) {
+    id app = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+    for (id window in ((NSArray * (*)(id, SEL))objc_msgSend)(app, sel_registerName("windows"))) {
+        BOOL gameWindow = [window respondsToSelector:sel_registerName("uiWindows")] && [[window valueForKey:@"uiWindows"] count];
+        if (gameWindow && ((BOOL (*)(id, SEL))objc_msgSend)(window, sel_registerName("isVisible"))) {
+            ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("orderOut:"), nil);
+            NSLog(@"[macfix] agent: window hidden");
+        }
+    }
+}
+
+static void installHidden(void) {
+    Class delegate = objc_lookUpClass("minecraftpeAppDelegate");
+    replaceMethod(delegate, "applicationWillResignActive:", (IMP)swallowAppCallback);
+    replaceMethod(delegate, "applicationDidEnterBackground:", (IMP)swallowAppCallback);
+    Class controller = objc_lookUpClass("minecraftpeViewControllerImpl") ?: objc_lookUpClass("minecraftpeViewControllerBase");
+    replaceMethod(controller, "stopAnimation", (IMP)swallowStopAnimation);
+    // The window appears after launch and UIKit may order it back in; keep it out.
+    static dispatch_source_t timer;
+    timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(timer, DISPATCH_TIME_NOW, NSEC_PER_SEC / 2, NSEC_PER_SEC / 10);
+    dispatch_source_set_event_handler(timer, ^{ hideGameWindow(); });
+    dispatch_resume(timer);
+    NSLog(@"[macfix] agent: hidden mode");
+}
+
 void agentStart(void) {
     const char *portEnv = getenv("MACFIX_AGENT_PORT");
     int port = portEnv ? atoi(portEnv) : 0;
@@ -651,6 +692,10 @@ void agentStart(void) {
     }
     NSLog(@"[macfix] agent: listening on 127.0.0.1:%d", port);
     dispatch_async(dispatch_get_main_queue(), ^{ installPresentHook(); });
+    const char *hidden = getenv("MACFIX_AGENT_HIDDEN");
+    if (hidden && strcmp(hidden, "1") == 0) {
+        installHidden();
+    }
     [NSThread detachNewThreadWithBlock:^{
         for (;;) {
             int client = accept(fd, NULL, NULL);

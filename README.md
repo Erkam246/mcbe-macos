@@ -68,6 +68,20 @@ Then open PlayCover and launch Minecraft.
 
 **Reinstalling or updating the IPA in PlayCover removes the patch.** Run `scripts/setup.sh --patch-only` afterwards, or run the full setup with the new IPA.
 
+## Driving the game from an agent (MCP)
+
+`libmacfix` includes an agent server for [mcpelauncher-agent](https://github.com/bedrock-mc/mcpelauncher-agent), an MCP server that lets an AI agent play the real client: keys, mouse, clicks, chat, screenshots, `minecraft://` links and a frame-rate cap. Input goes through the game's own input handlers, so it works while the window is in the background.
+
+It is off in normal launches. The MCP server's iOS backend turns it on when it launches the game:
+
+```sh
+claude mcp add minecraft -e MCPELAUNCHER_BACKEND=ios -- bun run /path/to/mcpelauncher-agent/src/index.ts
+```
+
+**Headless:** by default the game runs with its window hidden. It keeps rendering, taking input and giving screenshots, at about a third of one CPU core with a 10 FPS cap. Pass `hidden: false` to `launch` to watch it play. One instance per Mac, since the iOS app has a single data container. See the mcpelauncher-agent README for details.
+
+Under the hood the server listens on `127.0.0.1:$MACFIX_AGENT_PORT`, and `MACFIX_AGENT_HIDDEN=1` hides the window.
+
 ## Troubleshooting
 
 - **Clicks or keys do nothing:** check the log (below). A working launch shows either the game's own setup (`game mouse setup: ready=1`) or a repair (`repaired mouse ... ready=1`). If neither appears, the patch is not loaded; run `scripts/setup.sh --patch-only`.
