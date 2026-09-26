@@ -17,7 +17,7 @@
 
 extern CAFrameRateRange macfixGameFrameRate;
 
-static const CAFrameRateRange defaultFrameRate = {80, 120, 120};
+static CAFrameRateRange defaultFrameRate;  // macfix's rate, restored by cap 0
 static int fpsCap;             // 0 = macfix default; main thread only
 static double mouseX, mouseY;  // last absolute position, in screenshot pixels; main thread only
 
@@ -636,6 +636,7 @@ void agentStart(void) {
         return;
     }
     captureDone = dispatch_semaphore_create(0);
+    defaultFrameRate = macfixGameFrameRate;
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
