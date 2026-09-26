@@ -129,13 +129,14 @@ static void installInputRepair(void) {
 // Set the range after the game has configured the link; other links (PlayTools
 // uses one to deliver input) are left alone.
 static IMP origStartAnimation;
+CAFrameRateRange macfixGameFrameRate = {80, 120, 120};  // the agent's fps cap overrides it
 
 static void startAnimation(id self, SEL _cmd) {
     ((void (*)(id, SEL))origStartAnimation)(self, _cmd);
     CADisplayLink *link = ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("displayLink"));
     if ([link isKindOfClass:[CADisplayLink class]]) {
-        link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
-        NSLog(@"[macfix] game display link at 120 Hz");
+        link.preferredFrameRateRange = macfixGameFrameRate;
+        NSLog(@"[macfix] game display link at %.0f Hz", macfixGameFrameRate.preferred);
     }
 }
 
@@ -151,8 +152,11 @@ static void installFrameRate(void) {
     NSLog(@"[macfix] frame rate hook installed");
 }
 
+void agentStart(void);
+
 __attribute__((constructor)) static void init(void) {
     installFrameRate();
+    agentStart();
     installInputRepair();
     // AppKit may not be loaded yet when this image initialises.
     if (objc_getClass("NSResponder")) {
