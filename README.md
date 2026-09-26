@@ -10,15 +10,20 @@ Tested with Minecraft 1.26.50 on an M3 Pro, macOS 26.5.
 
 | Problem | Fix |
 | --- | --- |
+| Clicks or keys randomly do nothing for a whole session (hover still works) | Re-runs the game's own mouse and keyboard setup when it was skipped |
+| Frame rate capped at 60 FPS on 120 Hz displays | Raises the game's render loop to 120 Hz |
 | macOS "invalid key" beep on every WASD press | Silences the beep for key presses the game reads directly |
 | Game Mode stays off | Marks the app as a game, so fullscreen enables Game Mode |
 | Crash on launch (keymapping) | Turns off PlayCover keymapping; the game has native mouse and keyboard support |
-| Clicks do nothing | Sets the window to 1728×1080 (clicks only register at a height of 1080) |
+| Black bars in fullscreen | Sets 1080p at 16:10, close to a MacBook's fullscreen shape |
 
-## Known issues
+### Why clicks and keys break
 
-- **Frame rate is capped at 60 FPS**, even on 120 Hz displays. Raising every display link to 120 Hz lifts the cap but stops clicks from registering; a targeted fix is still being worked out.
-- **Clicks sometimes stop registering** after a relaunch, even with the working settings. Hovering still highlights buttons. The cause is not known yet.
+The game reads the mouse and keyboard through Apple's GameController framework. It installs its click and key handlers when it is told a mouse or keyboard has connected. On the Mac, the built-in keyboard and trackpad often connect before the game starts listening, so the game is never told and never installs the handlers. Hover still works because it comes from a different API, and whether a launch works depends on startup timing. The dylib catches the game's input handler when it starts listening, and runs the game's own setup if a device has no handler. It leaves handlers that are already installed alone.
+
+### Why the frame rate is capped
+
+The game drives rendering from its own display link and sets it up with an older API that pins it to 60 Hz. The dylib raises that one link to 120 Hz after the game has set it up. It does not touch other display links: PlayTools uses one to deliver input.
 
 ## Requirements
 
@@ -43,7 +48,7 @@ python3 scripts/verify_decrypted.py apple.ipa decrypted.ipa
 
 The versions must match exactly. The script checks every file byte for byte, and checks every page of every binary against Apple's code signature, so it catches injected libraries and changed data.
 
-It **cannot** check the encrypted code range itself (about 275 MB): Apple signs the encrypted pages, not the decrypted ones. PlayCover runs the game in the macOS App Sandbox, which limits what a tampered copy could reach.
+It **cannot** check the encrypted code range itself (about 275 MB): Apple signs the encrypted pages, not the decrypted ones. It also trusts the original as given, so download that from Apple yourself. PlayCover runs the game in the macOS App Sandbox, which limits what a tampered copy could reach.
 
 ## Setup
 
@@ -55,10 +60,9 @@ scripts/setup.sh /path/to/decrypted-minecraft.ipa
 
 The script:
 
-1. Checks that the IPA is decrypted, installs it into PlayCover and waits for the install to finish.
-2. Moves aside any old PlayCover keychain database (a stale one makes the game abort on launch).
-3. Applies the working PlayCover settings (keymapping off, 1728×1080 at 16:10).
-4. Builds `libmacfix.dylib`, adds it to the app, marks the app as a game, and re-signs it.
+1. Checks that the IPA is decrypted, installs it into PlayCover and waits until PlayCover has finished signing it.
+2. Quits PlayCover (it would otherwise write its old settings back) and applies the working settings: keymapping off, 1080p at 16:10.
+3. Builds `libmacfix.dylib`, adds it to the app, marks the app as a game, and re-signs it.
 
 Then open PlayCover and launch Minecraft.
 
@@ -66,9 +70,12 @@ Then open PlayCover and launch Minecraft.
 
 ## Troubleshooting
 
-- **Hovering highlights buttons but clicks do nothing:** the window height is not 1080. In PlayCover's settings for Minecraft, set Resolution to 1080p and Aspect Ratio to 16:10.
-- **Crash right after launch:** check that you are on PlayCover nightly, and that Keymapping is off.
+- **Clicks or keys do nothing:** check the log (below). A working launch shows either the game's own setup (`game mouse setup: ready=1`) or a repair (`repaired mouse ... ready=1`). If neither appears, the patch is not loaded; run `scripts/setup.sh --patch-only`.
+- **Crash on launch with "Couldn't add the Keychain Item":** a keychain database from an older PlayTools. Run `scripts/setup.sh --reset-playchain`.
+- **Other crashes right after launch:** check that you are on PlayCover nightly, and that Keymapping is off.
+- **Lag or FPS dips:** lower the Resolution Scaler in PlayCover's settings for Minecraft (for example, from 2.0 to 1.5). At 2.0 the game renders 3456×2160, more pixels than a MacBook screen shows.
 - **Game keeps running after closing the window:** iOS apps stay alive in the background. Quit with ⌘Q.
+- **Joining a server on the same Mac:** use `127.0.0.1` and the server's port. A LAN address like `192.168.x.x` needs Minecraft allowed under System Settings → Privacy & Security → Local Network.
 - **FPS counter:** set Metal HUD on in PlayCover's settings for Minecraft, or launch with `open --env MTL_HUD_ENABLED=1 ~/Library/Containers/io.playcover.PlayCover/Applications/com.mojang.minecraftpe.app`.
 - **Logs:** `log stream --predicate 'process == "minecraftpe" AND eventMessage CONTAINS "macfix"'` shows what the dylib did.
 

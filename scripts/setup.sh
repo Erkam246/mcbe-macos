@@ -2,8 +2,9 @@
 # Installs a decrypted Minecraft IPA into PlayCover, applies the settings that
 # work, and patches in the macfix dylib.
 #
-# usage: scripts/setup.sh <minecraft.ipa>   install, configure and patch
-#        scripts/setup.sh --patch-only       re-patch an installed app
+# usage: scripts/setup.sh <minecraft.ipa>     install, configure and patch
+#        scripts/setup.sh --patch-only         re-patch an installed app
+#        scripts/setup.sh --reset-playchain    fix "Couldn't add the Keychain Item" crashes
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,47 +40,76 @@ check_host() {
     fi
 }
 
-install_ipa() {
-    local ipa="$1" tmp
-    [ -f "$ipa" ] || die "no such file: $ipa"
+check_decrypted() {
+    local ipa="$1" tmp info
     tmp=$(mktemp -d)
-    unzip -q -o "$ipa" 'Payload/*.app/minecraftpe' -d "$tmp"
-    if otool -l "$tmp"/Payload/*.app/minecraftpe | grep -q 'cryptid 1'; then
-        rm -rf "$tmp"
-        die "this IPA is still FairPlay-encrypted; PlayCover needs a decrypted one"
-    fi
-    rm -rf "$tmp"
+    trap 'rm -rf "$tmp"' RETURN
+    unzip -q -o "$ipa" 'Payload/*.app/minecraftpe' -d "$tmp" || die "no Minecraft executable in $ipa"
+    info=$(otool -l "$tmp"/Payload/*.app/minecraftpe) || die "could not read the executable in $ipa"
+    case "$info" in
+        *LC_ENCRYPTION_INFO_64*) ;;
+        *) die "unexpected executable in $ipa (no encryption info)" ;;
+    esac
+    [[ "$info" == *"cryptid 0"* ]] || die "this IPA is still FairPlay-encrypted; PlayCover needs a decrypted one"
+}
 
+quit_playcover() {
+    # PlayCover keeps app settings in memory and writes them back when it
+    # launches an app, which would undo the settings applied below.
+    pgrep -x PlayCover >/dev/null || return 0
+    osascript -e 'quit app "PlayCover"' >/dev/null 2>&1 || true
+    for _ in $(seq 1 10); do pgrep -x PlayCover >/dev/null || return 0; sleep 1; done
+    die "quit PlayCover and run the script again"
+}
+
+install_ipa() {
+    local ipa="$1"
+    [ -f "$ipa" ] || die "no such file: $ipa"
+    check_decrypted "$ipa"
     quit_game
-    local before=0
-    [ -d "$APP_DIR" ] && before=$(stat -f %m "$APP_DIR")
+
+    local exe="$APP_DIR/minecraftpe" before=0 last=""
+    [ -f "$exe" ] && before=$(stat -f %m "$exe")
     step "Installing into PlayCover"
     open -a PlayCover "$ipa"
-    for _ in $(seq 1 180); do
-        if [ -f "$APP_DIR/minecraftpe" ] && [ "$(stat -f %m "$APP_DIR")" -gt "$before" ] && [ -f "$SETTINGS" ]; then
-            sleep 5  # let PlayCover finish signing
-            break
-        fi
+    # Done once the new executable exists, carries PlayTools, verifies, and has
+    # stopped changing.
+    for _ in $(seq 1 300); do
         sleep 1
+        [ -f "$exe" ] && [ -f "$SETTINGS" ] || continue
+        local now
+        now=$(stat -f %m "$exe")
+        [ "$now" -gt "$before" ] || continue
+        [[ "$(otool -L "$exe")" == *PlayTools.framework* ]] || continue
+        codesign -v "$APP_DIR" 2>/dev/null || continue
+        if [ "$now" = "$last" ]; then
+            quit_playcover
+            return
+        fi
+        last=$now
     done
-    [ -f "$APP_DIR/minecraftpe" ] || die "PlayCover did not finish installing"
+    die "PlayCover did not finish installing within 5 minutes"
+}
 
-    # A keychain database left by an older PlayTools makes the game abort on launch.
+reset_playchain() {
+    # A keychain database left by an older PlayTools makes the game abort on
+    # launch with "Couldn't add the Keychain Item".
     local chain="$CONTAINER/PlayChain"
-    if ls "$chain/$BUNDLE_ID".* >/dev/null 2>&1; then
-        local backup="$chain/backup-$(date +%Y%m%d-%H%M%S)"
-        mkdir -p "$backup"
-        mv "$chain/$BUNDLE_ID".* "$backup/"
-        step "Moved old PlayChain database to $backup"
-    fi
+    ls "$chain/$BUNDLE_ID".* >/dev/null 2>&1 || { step "No PlayChain database to reset"; return; }
+    quit_game
+    local backup="$chain/backup-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup"
+    mv "$chain/$BUNDLE_ID".* "$backup/"
+    step "Moved PlayChain database to $backup"
 }
 
 configure() {
     [ -f "$SETTINGS" ] || die "PlayCover settings not found; install the IPA first"
+    quit_playcover
     step "Applying PlayCover settings"
     # Keymapping's fake mouse crashes the game; it has native mouse/keyboard support.
     plutil -replace keymapping -bool false "$SETTINGS"
-    # Clicks stop registering unless the window height is exactly 1080.
+    # 1080p at 16:10 matches a MacBook's fullscreen shape closely.
     plutil -replace resolution -integer 2 "$SETTINGS"
     plutil -replace aspectRatio -integer 2 "$SETTINGS"
     plutil -replace windowWidth -integer 1728 "$SETTINGS"
@@ -92,9 +122,11 @@ patch_app() {
 
     step "Building libmacfix.dylib"
     mkdir -p "$BUILD"
+    local sdk
+    sdk=$(xcrun --sdk macosx --show-sdk-path)
     xcrun clang -target arm64-apple-ios15.0-macabi \
-        -isysroot "$(xcrun --sdk macosx --show-sdk-path)" \
-        -dynamiclib -fobjc-arc -framework Foundation \
+        -isysroot "$sdk" -iframework "$sdk/System/iOSSupport/System/Library/Frameworks" \
+        -dynamiclib -fobjc-arc -framework Foundation -framework GameController -framework QuartzCore \
         -install_name @executable_path/Frameworks/libmacfix.dylib \
         -o "$BUILD/libmacfix.dylib" "$ROOT/macfix/macfix.m"
     codesign -f -s - "$BUILD/libmacfix.dylib"
@@ -114,11 +146,11 @@ patch_app() {
 main() {
     check_host
     case "${1:-}" in
-        --patch-only) ;;
+        --patch-only) patch_app ;;
+        --reset-playchain) reset_playchain; exit 0 ;;
         ""|-h|--help) sed -n '2,7p' "$0"; exit 0 ;;
-        *) install_ipa "$1"; configure ;;
+        *) install_ipa "$1"; configure; patch_app ;;
     esac
-    patch_app
     step "Done. Launch Minecraft from PlayCover."
 }
 
