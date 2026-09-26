@@ -61,7 +61,7 @@ scripts/setup.sh /path/to/decrypted-minecraft.ipa
 The script:
 
 1. Checks that the IPA is decrypted, installs it into PlayCover and waits until PlayCover has finished signing it.
-2. Quits PlayCover (it would otherwise write its old settings back) and applies the working settings: keymapping off, 1080p at 16:10.
+2. Quits PlayCover (it would otherwise write its old settings back) and applies the working settings: keymapping off, 1080p at 16:10, Resolution Scaler 1.5.
 3. Builds `libmacfix.dylib`, adds it to the app, marks the app as a game, and re-signs it.
 
 Then open PlayCover and launch Minecraft.
@@ -73,7 +73,7 @@ Then open PlayCover and launch Minecraft.
 - **Clicks or keys do nothing:** check the log (below). A working launch shows either the game's own setup (`game mouse setup: ready=1`) or a repair (`repaired mouse ... ready=1`). If neither appears, the patch is not loaded; run `scripts/setup.sh --patch-only`.
 - **Crash on launch with "Couldn't add the Keychain Item":** a keychain database from an older PlayTools. Run `scripts/setup.sh --reset-playchain`.
 - **Other crashes right after launch:** check that you are on PlayCover nightly, and that Keymapping is off.
-- **Lag or FPS dips:** lower the Resolution Scaler in PlayCover's settings for Minecraft (for example, from 2.0 to 1.5). At 2.0 the game renders 3456×2160, more pixels than a MacBook screen shows.
+- **Lag or FPS dips:** lower the Resolution Scaler in PlayCover's settings for Minecraft. Setup sets 1.5 (2592×1620); PlayCover's default of 2.0 renders 3456×2160, more pixels than a MacBook screen shows.
 - **Game keeps running after closing the window:** iOS apps stay alive in the background. Quit with ⌘Q.
 - **Joining a server on the same Mac:** use `127.0.0.1` and the server's port. A LAN address like `192.168.x.x` needs Minecraft allowed under System Settings → Privacy & Security → Local Network.
 - **FPS counter:** set Metal HUD on in PlayCover's settings for Minecraft, or launch with `open --env MTL_HUD_ENABLED=1 ~/Library/Containers/io.playcover.PlayCover/Applications/com.mojang.minecraftpe.app`.
