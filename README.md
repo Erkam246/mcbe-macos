@@ -34,7 +34,7 @@ git clone https://github.com/bedrock-mc/mcbe-macos && cd mcbe-macos
 scripts/setup.sh /path/to/decrypted-minecraft.ipa
 ```
 
-This installs the IPA into PlayCover, applies the settings (keymapping off, 1080p 16:10, Resolution Scaler 1.5), builds and adds `libmacfix`, and re-signs the app. Then launch Minecraft from PlayCover.
+This installs the IPA into PlayCover, applies the settings (keymapping off, 1080p 16:10, Resolution Scaler 1.5, unlimited in-game frame rate), builds and adds `libmacfix`, and re-signs the app. Then launch Minecraft from PlayCover.
 
 Reinstalling or updating the IPA in PlayCover removes the patch: run `scripts/setup.sh --patch-only` afterwards.
 

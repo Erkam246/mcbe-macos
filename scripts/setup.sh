@@ -14,6 +14,7 @@ PLAYCOVER=/Applications/PlayCover.app
 CONTAINER="$HOME/Library/Containers/io.playcover.PlayCover"
 APP_DIR="${APP_DIR:-$CONTAINER/Applications/$BUNDLE_ID.app}"
 SETTINGS="${SETTINGS:-$CONTAINER/App Settings/$BUNDLE_ID.plist}"
+OPTIONS="${OPTIONS:-$HOME/Library/Containers/$BUNDLE_ID/Data/Documents/games/com.mojang/minecraftpe/options.txt}"
 BUILD="$ROOT/build"
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -117,6 +118,19 @@ configure() {
     plutil -replace windowHeight -integer 1080 "$SETTINGS"
     # 2592x1620: close to the screen's pixels; lower values render visibly softer.
     plutil -replace customScaler -float 1.5 "$SETTINGS"
+
+    # The iPad build caps advanced-mode graphics at 60 FPS by default; 0 (unlimited) leaves
+    # pacing to the display link. The game fills in missing keys on first launch.
+    step "Setting the in-game frame rate to unlimited"
+    mkdir -p "$(dirname "$OPTIONS")"
+    local key
+    for key in gfx_max_framerate gfx_max_framerate_advanced; do
+        if [ -f "$OPTIONS" ] && grep -q "^$key:" "$OPTIONS"; then
+            sed -i '' "s/^$key:.*/$key:0/" "$OPTIONS"
+        else
+            echo "$key:0" >> "$OPTIONS"
+        fi
+    done
 }
 
 patch_app() {
