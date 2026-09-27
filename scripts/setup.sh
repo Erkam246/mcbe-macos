@@ -115,8 +115,8 @@ configure() {
     plutil -replace aspectRatio -integer 2 "$SETTINGS"
     plutil -replace windowWidth -integer 1728 "$SETTINGS"
     plutil -replace windowHeight -integer 1080 "$SETTINGS"
-    # GPU time scales with pixels: at 1.5 (2592x1620) busy scenes miss the 120 Hz budget.
-    plutil -replace customScaler -float 1.25 "$SETTINGS"
+    # 2592x1620: close to the screen's pixels; lower values render visibly softer.
+    plutil -replace customScaler -float 1.5 "$SETTINGS"
 }
 
 patch_app() {
