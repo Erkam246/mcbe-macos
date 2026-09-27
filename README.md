@@ -32,7 +32,7 @@ git clone https://github.com/bedrock-mc/mcbe-macos && cd mcbe-macos
 scripts/setup.sh /path/to/decrypted-minecraft.ipa
 ```
 
-This installs the IPA into PlayCover, applies the settings (keymapping off, 1080p 16:10, Resolution Scaler 1.5), builds and adds `libmacfix`, and re-signs the app. Then launch Minecraft from PlayCover.
+This installs the IPA into PlayCover, applies the settings (keymapping off, 1080p 16:10, Resolution Scaler 1.25), builds and adds `libmacfix`, and re-signs the app. Then launch Minecraft from PlayCover.
 
 Reinstalling or updating the IPA in PlayCover removes the patch: run `scripts/setup.sh --patch-only` afterwards.
 
@@ -63,7 +63,7 @@ To compare, or if something regresses, launch with `open --env MACFIX_YIELD=spin
 
 - **Clicks or keys do nothing:** the log should show `game mouse setup: ready=1` or `repaired mouse ... ready=1`; if neither, run `scripts/setup.sh --patch-only`.
 - **"Couldn't add the Keychain Item" crash:** run `scripts/setup.sh --reset-playchain`. With PlayCover's KeyCover on, always launch from PlayCover: it only decrypts the game's keychain when it launches the game itself.
-- **Lag:** lower the Resolution Scaler in PlayCover's settings for Minecraft. FPS counter: turn on Metal HUD there.
+- **Dips below 120 FPS:** the GPU is the limit, and its cost follows resolution. Lower the Resolution Scaler in PlayCover's settings for Minecraft (1.0 holds a steady 120 FPS; 1.5 is sharper but dips in busy scenes). FPS counter: turn on Metal HUD there.
 - **Server on the same Mac:** use `127.0.0.1`. LAN addresses need Minecraft allowed under Privacy & Security → Local Network.
 - **Logs:** `log stream --predicate 'process == "minecraftpe" AND eventMessage CONTAINS "macfix"'`.
 
